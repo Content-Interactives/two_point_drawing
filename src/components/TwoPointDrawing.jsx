@@ -32,8 +32,68 @@ const roundToTick = (v) => Math.round(clamp(v));
 const GRID_CELL = scaleX; // 1 unit
 const POINT_RADIUS = 6;
 const LINE_ANIMATION_DURATION_MS = 1500;
+const LINE_ARROW_SIZE = 8;
 
 const tickValues = Array.from({ length: MAX - MIN + 1 }, (_, i) => MIN + i);
+
+/** Clip the infinite line through p1 and p2 to the rectangle [minX,maxX] x [minY,maxY]. Returns [end1, end2] or null. Works in any coordinate system (value or SVG). */
+function clipLineToRect(p1, p2, minX, maxX, minY, maxY) {
+	const x1 = p1.x;
+	const y1 = p1.y;
+	const dx = p2.x - p1.x;
+	const dy = p2.y - p1.y;
+	const ts = [];
+	if (Math.abs(dx) > 1e-10) {
+		const tMin = (minX - x1) / dx;
+		const yMin = y1 + tMin * dy;
+		if (yMin >= minY && yMin <= maxY) ts.push(tMin);
+		const tMax = (maxX - x1) / dx;
+		const yMax = y1 + tMax * dy;
+		if (yMax >= minY && yMax <= maxY) ts.push(tMax);
+	}
+	if (Math.abs(dy) > 1e-10) {
+		const tMin = (minY - y1) / dy;
+		const xMin = x1 + tMin * dx;
+		if (xMin >= minX && xMin <= maxX) ts.push(tMin);
+		const tMax = (maxY - y1) / dy;
+		const xMax = x1 + tMax * dx;
+		if (xMax >= minX && xMax <= maxX) ts.push(tMax);
+	}
+	if (ts.length < 2) return null;
+	const tLo = Math.min(...ts);
+	const tHi = Math.max(...ts);
+	return [
+		{ x: x1 + tLo * dx, y: y1 + tLo * dy },
+		{ x: x1 + tHi * dx, y: y1 + tHi * dy },
+	];
+}
+
+/** Order clip endpoints so that the line goes from "near p1" to "near p2". */
+function orderEndpointsByPoints(clipEnd1, clipEnd2, p1, p2) {
+	const d1a = (clipEnd1.x - p1.x) ** 2 + (clipEnd1.y - p1.y) ** 2;
+	const d2a = (clipEnd2.x - p1.x) ** 2 + (clipEnd2.y - p1.y) ** 2;
+	return d1a <= d2a ? [clipEnd1, clipEnd2] : [clipEnd2, clipEnd1];
+}
+
+/** Container bounds in SVG pixel space (full graph area). */
+const CONTAINER_LEFT = 0;
+const CONTAINER_TOP = 0;
+const CONTAINER_RIGHT = WIDTH;
+const CONTAINER_BOTTOM = HEIGHT;
+
+/** Arrow polygon points (SVG) with tip at (sx,sy) and direction (dx,dy) normalized; size in px. */
+function arrowPoints(sx, sy, dx, dy, size) {
+	const half = size / 2;
+	const baseX = sx - size * dx;
+	const baseY = sy - size * dy;
+	const perpX = -dy;
+	const perpY = dx;
+	const leftX = baseX + half * perpX;
+	const leftY = baseY + half * perpY;
+	const rightX = baseX - half * perpX;
+	const rightY = baseY - half * perpY;
+	return `${sx},${sy} ${leftX},${leftY} ${rightX},${rightY}`;
+}
 
 const MAX_LINES = 2;
 
@@ -168,8 +228,46 @@ const TwoPointDrawing = () => {
 	const y1 = p1 ? valueToY(p1.y) : 0;
 	const x2 = p2 ? valueToX(p2.x) : 0;
 	const y2 = p2 ? valueToY(p2.y) : 0;
-	const lineEndX = x1 + lineProgress * (x2 - x1);
-	const lineEndY = y1 + lineProgress * (y2 - y1);
+
+	/** Renders a line (value-space p1, p2) extended to container edges (SVG bounds) with arrows. Returns { lineProps, arrow1, arrow2 } or null. */
+	const renderExtendedLine = (segP1, segP2) => {
+		const svgP1 = { x: valueToX(segP1.x), y: valueToY(segP1.y) };
+		const svgP2 = { x: valueToX(segP2.x), y: valueToY(segP2.y) };
+		const clip = clipLineToRect(
+			svgP1,
+			svgP2,
+			CONTAINER_LEFT,
+			CONTAINER_RIGHT,
+			CONTAINER_TOP,
+			CONTAINER_BOTTOM
+		);
+		if (!clip) return null;
+		const [e1, e2] = orderEndpointsByPoints(clip[0], clip[1], svgP1, svgP2);
+		const sx1 = e1.x;
+		const sy1 = e1.y;
+		const sx2 = e2.x;
+		const sy2 = e2.y;
+		const dx = sx2 - sx1;
+		const dy = sy2 - sy1;
+		const len = Math.hypot(dx, dy) || 1;
+		const ux = dx / len;
+		const uy = dy / len;
+		const arrow1 = arrowPoints(sx1, sy1, -ux, -uy, LINE_ARROW_SIZE);
+		const arrow2 = arrowPoints(sx2, sy2, ux, uy, LINE_ARROW_SIZE);
+		return {
+			lineProps: {
+				x1: sx1,
+				y1: sy1,
+				x2: sx2,
+				y2: sy2,
+				stroke: '#1967d2',
+				strokeWidth: 3,
+				strokeLinecap: 'round',
+			},
+			arrow1,
+			arrow2,
+		};
+	};
 
 	return (
 		<div
@@ -368,31 +466,68 @@ const TwoPointDrawing = () => {
 						strokeWidth={2}
 					/>
 				)}
-				{/* Completed lines (max 2) */}
-				{completedLines.map((seg, idx) => (
-					<line
-						key={idx}
-						x1={valueToX(seg.p1.x)}
-						y1={valueToY(seg.p1.y)}
-						x2={valueToX(seg.p2.x)}
-						y2={valueToY(seg.p2.y)}
-						stroke="#1967d2"
-						strokeWidth={3}
-						strokeLinecap="round"
-					/>
-				))}
-				{/* Animated line from first to second point (current segment) */}
-				{points.length === 2 && (
-					<line
-						x1={x1}
-						y1={y1}
-						x2={lineEndX}
-						y2={lineEndY}
-						stroke="#1967d2"
-						strokeWidth={3}
-						strokeLinecap="round"
-					/>
-				)}
+				{/* Completed lines (max 2): extended to edges with arrows */}
+				{completedLines.map((seg, idx) => {
+					const r = renderExtendedLine(seg.p1, seg.p2);
+					if (!r) return null;
+					return (
+						<g key={idx}>
+							<line {...r.lineProps} />
+							<polygon points={r.arrow1} fill="#1967d2" />
+							<polygon points={r.arrow2} fill="#1967d2" />
+						</g>
+					);
+				})}
+				{/* Animated line (current segment): starts at midpoint, both ends grow to container edges with arrows */}
+				{points.length === 2 && (() => {
+					const svgP1 = { x: valueToX(p1.x), y: valueToY(p1.y) };
+					const svgP2 = { x: valueToX(p2.x), y: valueToY(p2.y) };
+					const clip = clipLineToRect(
+						svgP1,
+						svgP2,
+						CONTAINER_LEFT,
+						CONTAINER_RIGHT,
+						CONTAINER_TOP,
+						CONTAINER_BOTTOM
+					);
+					if (!clip) return null;
+					const [e1, e2] = orderEndpointsByPoints(clip[0], clip[1], svgP1, svgP2);
+					const sx1 = e1.x;
+					const sy1 = e1.y;
+					const sx2 = e2.x;
+					const sy2 = e2.y;
+					const dx = sx2 - sx1;
+					const dy = sy2 - sy1;
+					const fullLen = Math.hypot(dx, dy) || 1;
+					const ux = dx / fullLen;
+					const uy = dy / fullLen;
+					const midX = (sx1 + sx2) / 2;
+					const midY = (sy1 + sy2) / 2;
+					const halfLen = fullLen / 2;
+					// Grow from center to container edges: length depends on angle and position
+					const growLen = lineProgress * halfLen;
+					const startX = midX - growLen * ux;
+					const startY = midY - growLen * uy;
+					const endX = midX + growLen * ux;
+					const endY = midY + growLen * uy;
+					const arrowLeft = arrowPoints(startX, startY, -ux, -uy, LINE_ARROW_SIZE);
+					const arrowRight = arrowPoints(endX, endY, ux, uy, LINE_ARROW_SIZE);
+					return (
+						<g>
+							<line
+								x1={startX}
+								y1={startY}
+								x2={endX}
+								y2={endY}
+								stroke="#1967d2"
+								strokeWidth={3}
+								strokeLinecap="round"
+							/>
+							<polygon points={arrowLeft} fill="#1967d2" />
+							<polygon points={arrowRight} fill="#1967d2" />
+						</g>
+					);
+				})()}
 				{/* All points: completed line endpoints + current points */}
 				{allPoints.map((p, i) => (
 					<circle
