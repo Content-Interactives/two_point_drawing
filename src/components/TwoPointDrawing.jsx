@@ -32,7 +32,7 @@ const roundToTick = (v) => Math.round(clamp(v));
 const GRID_CELL = scaleX; // 1 unit
 const POINT_RADIUS = 6;
 const LINE_ANIMATION_DURATION_MS = 1500;
-const LINE_ARROW_SIZE = 8;
+const LINE_ARROW_SIZE = 10;
 
 const tickValues = Array.from({ length: MAX - MIN + 1 }, (_, i) => MIN + i);
 
@@ -204,15 +204,11 @@ const TwoPointDrawing = () => {
 	const canRedo = historyIndex < history.length;
 	const canReset = history.length > 0 || points.length > 0;
 
-	const buttonStyle = (enabled) => ({
-		padding: '4px 8px',
-		fontSize: 12,
-		cursor: enabled ? 'pointer' : 'default',
-		opacity: enabled ? 1 : 0.5,
-	});
+	const [showGlow, setShowGlow] = useState(true);
 
 	// Axis line endpoints: extend one segment past MIN/MAX (arrows at extended ends)
-	const arrowSize = 8;
+	const arrowSize = 10;
+	const arrowHeight = 7;
 	const xMin = valueToX(EXTENDED_MIN);
 	const xMax = valueToX(EXTENDED_MAX);
 	const yMin = valueToY(EXTENDED_MIN);
@@ -285,63 +281,57 @@ const TwoPointDrawing = () => {
 				border: '1px solid #ccc',
 				borderRadius: 4,
 				overflow: 'hidden',
-				backgroundColor: '#fafafa',
+				backgroundColor: '#fff',
 				cursor: 'crosshair',
+				userSelect: 'none',
+				WebkitUserSelect: 'none',
+				MozUserSelect: 'none',
+				msUserSelect: 'none',
 			}}
 		>
 			{/* Undo, Redo, Reset */}
-			<div
-				style={{
-					position: 'absolute',
-					top: 11,
-					right: 12,
-					display: 'flex',
-					gap: 6,
-					alignItems: 'center',
-					zIndex: 1,
-				}}
-			>
-				<button
-					type="button"
-					onClick={(e) => {
-						e.stopPropagation();
-						setHistoryIndex((i) => Math.max(0, i - 1));
-					}}
-					disabled={!canUndo}
-					style={buttonStyle(canUndo)}
-				>
-					Undo
-				</button>
-				<button
-					type="button"
-					onClick={(e) => {
-						e.stopPropagation();
-						setHistoryIndex((i) => Math.min(history.length, i + 1));
-					}}
-					disabled={!canRedo}
-					style={buttonStyle(canRedo)}
-				>
-					Redo
-				</button>
-				<button
-					type="button"
-					onClick={(e) => {
-						e.stopPropagation();
-						setHistory([]);
-						setHistoryIndex(0);
-						setPoints([]);
-						setLineProgress(0);
-					}}
-					disabled={!canReset}
-					style={{
-						...buttonStyle(canReset),
-						backgroundColor: '#e34242',
-						borderRadius: 6,
-						border: 'none',
-					}}
-				>
-					Reset
-				</button>
+			<div className={`segmented-glow-button simple-glow compact${!showGlow ? ' hide-orbit' : ''}`} style={{ position: 'absolute', top: 11, right: 12, zIndex: 1 }}>
+				<div className="segment-container">
+					<button
+						type="button"
+						className={`segment ${!canUndo ? 'inactive' : ''}`}
+						onClick={(e) => {
+							e.stopPropagation();
+							if (canUndo) setShowGlow(false);
+							setHistoryIndex((i) => Math.max(0, i - 1));
+						}}
+						disabled={!canUndo}
+					>
+						Undo
+					</button>
+					<button
+						type="button"
+						className={`segment ${!canRedo ? 'inactive' : ''}`}
+						onClick={(e) => {
+							e.stopPropagation();
+							if (canRedo) setShowGlow(false);
+							setHistoryIndex((i) => Math.min(history.length, i + 1));
+						}}
+						disabled={!canRedo}
+					>
+						Redo
+					</button>
+					<button
+						type="button"
+						className={`segment ${!canReset ? 'inactive' : ''}`}
+						onClick={(e) => {
+							e.stopPropagation();
+							if (canReset) setShowGlow(false);
+							setHistory([]);
+							setHistoryIndex(0);
+							setPoints([]);
+							setLineProgress(0);
+						}}
+						disabled={!canReset}
+					>
+						Reset
+					</button>
+				</div>
 			</div>
 			<svg width={WIDTH} height={HEIGHT} style={{ display: 'block', pointerEvents: 'none' }}>
 				<defs>
@@ -355,8 +345,8 @@ const TwoPointDrawing = () => {
 					>
 						<path
 							d={`M 0 0 L 0 ${GRID_CELL} M 0 0 L ${GRID_CELL} 0 M ${GRID_CELL} 0 L ${GRID_CELL} ${GRID_CELL} M 0 ${GRID_CELL} L ${GRID_CELL} ${GRID_CELL}`}
-							stroke="#e0e0e0"
-							strokeWidth="0.5"
+							stroke="#e6e6e6"
+							strokeWidth="1"
 							fill="none"
 						/>
 					</pattern>
@@ -368,7 +358,7 @@ const TwoPointDrawing = () => {
 					y1={centerY}
 					x2={xAxisRight}
 					y2={centerY}
-					stroke="#333"
+					stroke="#999999"
 					strokeWidth={2}
 				/>
 				{/* Y axis */}
@@ -377,9 +367,35 @@ const TwoPointDrawing = () => {
 					y1={yAxisTop}
 					x2={centerX}
 					y2={yAxisBottom}
-					stroke="#333"
+					stroke="#999999"
 					strokeWidth={2}
 				/>
+				{/* Axis labels */}
+				<text
+					x={valueToX(10)}
+					y={centerY - 12}
+					textAnchor="middle"
+					fontSize="14px"
+					fontWeight="bold"
+					fontStyle="italic"
+					fill="#999999"
+					fontFamily="'Latin Modern Roman CK12', 'Latin Modern Roman', serif"
+				>
+					x-axis
+				</text>
+				<text
+					x={centerX + 14}
+					y={yMax + 5}
+					textAnchor="start"
+					dominantBaseline="middle"
+					fontSize="14px"
+					fontWeight="bold"
+					fontStyle="italic"
+					fill="#999999"
+					fontFamily="'Latin Modern Roman CK12', 'Latin Modern Roman', serif"
+				>
+					y-axis
+				</text>
 				{/* X axis ticks and labels */}
 				{tickValues.map((value) => {
 					const x = valueToX(value);
@@ -390,7 +406,7 @@ const TwoPointDrawing = () => {
 								y1={centerY}
 								x2={x}
 								y2={centerY + 10}
-								stroke="#333"
+								stroke="#999999"
 								strokeWidth={1.5}
 							/>
 							{value !== 0 && (
@@ -398,11 +414,12 @@ const TwoPointDrawing = () => {
 									x={x}
 									y={centerY + 26}
 									textAnchor="middle"
-									fontSize={14}
-									fill="#333"
-									fontFamily="system-ui, sans-serif"
+									fontSize="14px"
+									fontWeight="bold"
+									fill="#999999"
+									fontFamily="'Latin Modern Roman CK12', 'Latin Modern Roman', serif"
 								>
-									{value}
+									{value < 0 ? '\u002D' + (-value) : value}
 								</text>
 							)}
 						</g>
@@ -418,7 +435,7 @@ const TwoPointDrawing = () => {
 								y1={y}
 								x2={centerX - 10}
 								y2={y}
-								stroke="#333"
+								stroke="#999999"
 								strokeWidth={1.5}
 							/>
 							{value !== 0 && (
@@ -426,11 +443,12 @@ const TwoPointDrawing = () => {
 									x={centerX - 14}
 									y={y + 5}
 									textAnchor="end"
-									fontSize={14}
-									fill="#333"
-									fontFamily="system-ui, sans-serif"
+									fontSize="14px"
+									fontWeight="bold"
+									fill="#999999"
+									fontFamily="'Latin Modern Roman CK12', 'Latin Modern Roman', serif"
 								>
-									{value}
+									{value < 0 ? '\u002D' + (-value) : value}
 								</text>
 							)}
 						</g>
@@ -438,20 +456,20 @@ const TwoPointDrawing = () => {
 				})}
 				{/* Arrows at all 4 ends: right (+x), left (-x), top (+y), bottom (-y) */}
 				<polygon
-					points={`${xMax - arrowSize},${centerY - arrowSize} ${xMax},${centerY} ${xMax - arrowSize},${centerY + arrowSize}`}
-					fill="#333"
+					points={`${xMax - arrowSize},${centerY - arrowHeight} ${xMax},${centerY} ${xMax - arrowSize},${centerY + arrowHeight}`}
+					fill="#999999"
 				/>
 				<polygon
-					points={`${xMin + arrowSize},${centerY - arrowSize} ${xMin},${centerY} ${xMin + arrowSize},${centerY + arrowSize}`}
-					fill="#333"
+					points={`${xMin + arrowSize},${centerY - arrowHeight} ${xMin},${centerY} ${xMin + arrowSize},${centerY + arrowHeight}`}
+					fill="#999999"
 				/>
 				<polygon
-					points={`${centerX - arrowSize},${yMax + arrowSize} ${centerX},${yMax} ${centerX + arrowSize},${yMax + arrowSize}`}
-					fill="#333"
+					points={`${centerX - arrowHeight},${yMax + arrowSize} ${centerX},${yMax} ${centerX + arrowHeight},${yMax + arrowSize}`}
+					fill="#999999"
 				/>
 				<polygon
-					points={`${centerX - arrowSize},${yMin - arrowSize} ${centerX},${yMin} ${centerX + arrowSize},${yMin - arrowSize}`}
-					fill="#333"
+					points={`${centerX - arrowHeight},${yMin - arrowSize} ${centerX},${yMin} ${centerX + arrowHeight},${yMin - arrowSize}`}
+					fill="#999999"
 				/>
 				{/* Hover preview: where a point would be placed */}
 				{hoverPreview && (
